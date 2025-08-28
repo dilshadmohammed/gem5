@@ -60,6 +60,7 @@ flit::flit(int packet_id, int id, int  vc, int vnet, RouteInfo route, int size,
     m_stage.second = curTime;
     m_width = bWidth;
     msgSize = MsgSize;
+    attacked = false;
 
     if (size == 1) {
         m_type = HEAD_TAIL_;
@@ -122,6 +123,7 @@ flit::print(std::ostream& out) const
     out << "Dest Router=" << m_route.dest_router << " ";
     out << "Set Time=" << m_time << " ";
     out << "Width=" << m_width<< " ";
+    out << "Attacked=" << attacked << " ";
     out << "]";
 }
 

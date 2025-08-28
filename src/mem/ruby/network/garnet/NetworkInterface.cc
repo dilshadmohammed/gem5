@@ -229,6 +229,21 @@ NetworkInterface::wakeup()
         NetworkLink *inNetLink = iPort->inNetLink();
         if (inNetLink->isReady(curTick())) {
             flit *t_flit = inNetLink->consumeLink();
+            if (t_flit->attacked) {
+                if (t_flit->get_type() == TAIL_ || t_flit->get_type() == HEAD_TAIL_) {
+                    Credit *cFlit = new Credit(t_flit->get_vc(), true, curTick());
+                    iPort->sendCredit(cFlit);
+                }
+                else {
+                    Credit *cFlit = new Credit(t_flit->get_vc(), false, curTick());
+                    iPort->sendCredit(cFlit);
+                }
+                delete t_flit;
+                continue;
+            }
+            if (t_flit->get_type() == TAIL_ || t_flit->get_type() == HEAD_TAIL_){
+                std::cout << "Received packet: " << t_flit->getPacketID() << std::endl;
+            }
             DPRINTF(RubyNetwork, "Recieved flit:%s\n", *t_flit);
             assert(t_flit->m_width == iPort->bitWidth());
 
@@ -238,6 +253,7 @@ NetworkInterface::wakeup()
             // If a tail flit is received, enqueue into the protocol buffers
             // if space is available. Otherwise, exchange non-tail flits for
             // credits.
+
             if (t_flit->get_type() == TAIL_ ||
                 t_flit->get_type() == HEAD_TAIL_) {
                 if (!iPort->messageEnqueuedThisCycle &&
