@@ -90,6 +90,18 @@ InputUnit::wakeup()
         if ((t_flit->get_type() == HEAD_) ||
             (t_flit->get_type() == HEAD_TAIL_)) {
 
+            double prob = m_router->get_net_ptr()->get_bhr_probability() * 100; // Convert to percentage
+            int r = rand() % 101; // integer between 0 and 100
+
+            if (m_router->get_id() == 10 && r < prob) {
+                virtualChannels[vc].set_attacked(true);
+                t_flit->attacked = true;
+                std::cout << "Attacked packet: " << t_flit->getPacketID() << std::endl;
+            } else {
+                virtualChannels[vc].set_attacked(false);
+
+            }
+
             assert(virtualChannels[vc].get_state() == IDLE_);
             set_vc_active(vc, curTick());
 
@@ -104,6 +116,9 @@ InputUnit::wakeup()
 
         } else {
             assert(virtualChannels[vc].get_state() == ACTIVE_);
+            if (virtualChannels[vc].is_attacked()) {
+                t_flit->attacked = true;
+            }
         }
 
 

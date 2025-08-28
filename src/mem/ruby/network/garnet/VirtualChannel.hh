@@ -52,6 +52,8 @@ class VirtualChannel
     VirtualChannel();
     ~VirtualChannel() = default;
 
+    void set_attacked(bool attack_status) { attacked = attack_status; }
+    bool is_attacked() const { return attacked; }
     bool need_stage(flit_stage stage, Tick time);
     void set_idle(Tick curTime);
     void set_active(Tick curTime);
@@ -104,6 +106,7 @@ class VirtualChannel
     int m_output_port;
     Tick m_enqueue_time;
     int m_output_vc;
+    bool attacked = false;
 };
 
 } // namespace garnet
