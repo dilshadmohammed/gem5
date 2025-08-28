@@ -172,6 +172,10 @@ class InputUnit : public Consumer
     // Statistical variables
     std::vector<double> m_num_buffer_writes;
     std::vector<double> m_num_buffer_reads;
+
+    std::vector<bool> blackhole_vc;
+    std::vector<int> dropping_packet_id;
+
 };
 
 } // namespace garnet
