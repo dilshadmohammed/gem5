@@ -75,6 +75,8 @@ class GarnetNetwork : public Network
     int getNumRows() const { return m_num_rows; }
     int getNumCols() { return m_num_cols; }
 
+    double get_bhr_probability() const { return bhr_probability; } // Probability of BHR attack simulation
+
     // for network
     uint32_t getNiFlitSize() const { return m_ni_flit_size; }
     uint32_t getBuffersPerDataVC() { return m_buffers_per_data_vc; }

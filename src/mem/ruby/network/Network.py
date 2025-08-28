@@ -60,6 +60,13 @@ class RubyNetwork(ClockedObject):
     out_port = VectorRequestPort("CPU output port")
     master = DeprecatedParam(out_port, "`master` is now called `out_port`")
 
+    bhr_probability = Param.Float(
+        0.0,
+        "Probability of BHR attack simulation. "
+        "Set to 0.0 for no attacks, or a value between 0.0 and 1.0 for "
+        "attack probability.",
+    )
+
     data_msg_size = Param.Int(
         Parent.block_size_bytes,
         "Size of data messages. Defaults to the parent "

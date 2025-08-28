@@ -164,6 +164,8 @@ class Network : public ClockedObject
     std::vector<std::vector<MessageBuffer*> > m_fromNetQueues;
     std::vector<bool> m_ordered;
 
+    double bhr_probability; // Probability of BHR attack simulation
+
   private:
     // Global address map
     struct AddrMapNode
