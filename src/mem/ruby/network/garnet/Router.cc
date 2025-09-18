@@ -89,6 +89,22 @@ Router::wakeup()
         m_output_unit[outport]->wakeup();
     }
 
+    if(curTick() % 50000 == 0) {
+        for(int inport=0; inport < m_input_unit.size(); inport++) {
+            for(int vc=0; vc < m_num_vcs; vc++) {
+                double avg_wait = m_input_unit[inport]->get_avg_wait_time(vc);
+
+                std::ofstream logFile;
+                logFile.open("router_stats.csv",std::ios::app);
+                logFile << curTick() << "," << m_id << "," << inport << "," << vc
+                        << "," << avg_wait << "\n";
+                logFile.close();
+
+                m_input_unit[inport]->reset_wait_stats(vc);
+            }
+        }
+    }
+
     // Switch Allocation
     switchAllocator.wakeup();
 

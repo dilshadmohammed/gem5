@@ -53,6 +53,8 @@ InputUnit::InputUnit(int id, PortDirection direction, Router *router)
     m_num_buffer_writes.resize(m_num_vcs/m_vc_per_vnet);
     blackhole_vc.resize(m_num_vcs, false);
     dropping_packet_id.resize(m_num_vcs, -1);
+    total_vc_wait_time.resize(m_num_vcs, 0);
+    vc_flit_count.resize(m_num_vcs, 0);
     for (int i = 0; i < m_num_buffer_reads.size(); i++) {
         m_num_buffer_reads[i] = 0;
         m_num_buffer_writes[i] = 0;

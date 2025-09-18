@@ -115,8 +115,14 @@ class InputUnit : public Consumer
 
     inline flit*
     getTopFlit(int vc)
-    {
-        return virtualChannels[vc].getTopFlit();
+    {   
+        flit *t_flit = virtualChannels[vc].getTopFlit();
+        if (t_flit){
+            Tick wait_time = curTick() - t_flit->get_enqueue_time();
+            total_vc_wait_time[vc] += wait_time;
+            vc_flit_count[vc]++;
+        }
+        return t_flit;
     }
 
     inline bool
@@ -147,6 +153,16 @@ class InputUnit : public Consumer
         m_credit_link = credit_link;
     }
 
+    inline double get_avg_wait_time(int vc) const {
+        if (vc_flit_count[vc]==0) return 0.0;
+        return (double) total_vc_wait_time[vc] / vc_flit_count[vc];
+    }
+
+    inline void reset_wait_stats(int vc) {
+        total_vc_wait_time[vc] = 0;
+        vc_flit_count[vc] = 0;
+    }
+
     double get_buf_read_activity(unsigned int vnet) const
     { return m_num_buffer_reads[vnet]; }
     double get_buf_write_activity(unsigned int vnet) const
@@ -175,6 +191,9 @@ class InputUnit : public Consumer
 
     std::vector<bool> blackhole_vc;
     std::vector<int> dropping_packet_id;
+
+    std::vector<u_int64_t> total_vc_wait_time;
+    std::vector<u_int64_t> vc_flit_count;
 
 };
 
