@@ -141,9 +141,16 @@ if args.bench:
     if len(apps) != args.num_cpus:
         print("number of benchmarks not equal to set num_cpus!")
         sys.exit(1)
+    print(apps)
+    idx = 0
     for app in apps:
         try:
             if get_runtime_isa() == ISA.X86:
+                exec(
+                    "workload = %s('x86', 'linux', '%s')"
+                    % (app, args.spec_input)
+                )
+            elif get_runtime_isa() == ISA.ARM:
                 exec(
                     "workload = %s('arm_%s', 'linux', '%s')"
                     % (app, args.arm_iset, args.spec_input)
@@ -155,7 +162,10 @@ if args.bench:
                     "workload = %s(buildEnv['TARGET_ISA', 'linux', '%s')"
                     % (app, args.spec_input)
                 )
-            multiprocesses.append(workload.makeProcess())
+            proc = workload.makeProcess()
+            proc.pid = 100 + idx
+            idx += 1
+            multiprocesses.append(proc)
         except:
             print(
                 f"Unable to find workload for {get_runtime_isa().name()}: {app}",
