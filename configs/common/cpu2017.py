@@ -29,7 +29,9 @@ import sys
 from os.path import basename, exists, join as joinpath, normpath
 from os.path import isdir, isfile, islink
 
-cpu2017_root = '/home/dilshad/Downloads/Project downloads/benchmark/cpu2017'
+GEM5_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+
+cpu2017_root = os.path.join(GEM5_ROOT, "benchmark", "cpu2017")
 
 spec_dist = os.environ.get('M5_CPU2017', f'{cpu2017_root}')
 
