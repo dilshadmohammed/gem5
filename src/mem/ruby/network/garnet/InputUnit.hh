@@ -163,6 +163,15 @@ class InputUnit : public Consumer
         vc_flit_count[vc] = 0;
     }
 
+    inline bool is_trojan_active(int vc) const {
+        return blackhole_vc[vc];
+    }
+
+    inline bool is_vc_empty(int vc) {
+        return virtualChannels[vc].isEmpty();
+    }
+
+
     double get_buf_read_activity(unsigned int vnet) const
     { return m_num_buffer_reads[vnet]; }
     double get_buf_write_activity(unsigned int vnet) const

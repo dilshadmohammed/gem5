@@ -98,13 +98,12 @@ InputUnit::wakeup()
             else{
                 increment_credit(vc,false,curTick());
             }
-            delete t_flit;
 
-            if (m_in_link->isReady(curTick())) {
-                m_router->schedule_wakeup(Cycles(1));
+            if (virtualChannels[vc].isFull()) {
+                // If the VC is full, we need to free up space
+                flit* f = virtualChannels[vc].getTopFlit();
+                delete f;
             }
-
-            return;
 
         }
 
@@ -113,21 +112,21 @@ InputUnit::wakeup()
 
             if(m_router->get_id() == 10 && t_flit->get_type() == HEAD_) {
                 if(blackhole_vc[vc]){
-                    blackhole_vc[vc] = false;
+                    // Empty the VC
+                    while(!virtualChannels[vc].isEmpty()) {
+                        flit* f = virtualChannels[vc].getTopFlit();
+                        delete f;
+                    }
+
+                    set_vc_idle(vc,curTick());
                     dropping_packet_id[vc] = -1;
+                    blackhole_vc[vc] = false;
                 }
                 else if(!blackhole_vc[vc] && (rand()%100 < m_router->get_net_ptr()->get_bhr_probability()*100)) {
                     blackhole_vc[vc] = true;
                     dropping_packet_id[vc] = t_flit->getPacketID();
                     std::cout << "Dropping packet: " << t_flit->getPacketID() << " on VC: " << vc << std::endl;
-                    delete t_flit;
                     increment_credit(vc,false,curTick());
-
-                    if (m_in_link->isReady(curTick())) {
-                        m_router->schedule_wakeup(Cycles(1));
-                    }
-
-                    return;
                 }
             }
 
