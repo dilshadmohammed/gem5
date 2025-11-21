@@ -39,6 +39,8 @@
 #include "mem/ruby/network/garnet/NetworkLink.hh"
 #include "mem/ruby/network/garnet/OutputUnit.hh"
 
+#include "base/output.hh"
+
 namespace gem5
 {
 
@@ -88,6 +90,25 @@ Router::wakeup()
     for (int outport = 0; outport < m_output_unit.size(); outport++) {
         m_output_unit[outport]->wakeup();
     }
+
+    if(curTick() % 50000 == 0) {
+        for(int inport=0; inport < m_input_unit.size(); inport++) {
+            for(int vc=0; vc < m_num_vcs; vc++) {
+                double avg_wait = m_input_unit[inport]->get_avg_wait_time(vc);
+
+                std::ofstream logFile;
+                logFile.open("router_stats.csv",std::ios::app);
+                logFile << curTick()/500 << "," << m_id << "," << inport << "," << vc
+                        << "," << avg_wait/500 << "\n";
+                logFile.close();
+
+                m_input_unit[inport]->reset_wait_stats(vc);
+            }
+        }
+    }
+
+    
+
 
     // Switch Allocation
     switchAllocator.wakeup();

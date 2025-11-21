@@ -51,6 +51,10 @@ InputUnit::InputUnit(int id, PortDirection direction, Router *router)
     const int m_num_vcs = m_router->get_num_vcs();
     m_num_buffer_reads.resize(m_num_vcs/m_vc_per_vnet);
     m_num_buffer_writes.resize(m_num_vcs/m_vc_per_vnet);
+    blackhole_vc.resize(m_num_vcs, false);
+    dropping_packet_id.resize(m_num_vcs, -1);
+    total_vc_wait_time.resize(m_num_vcs, 0);
+    vc_flit_count.resize(m_num_vcs, 0);
     for (int i = 0; i < m_num_buffer_reads.size(); i++) {
         m_num_buffer_reads[i] = 0;
         m_num_buffer_writes[i] = 0;
@@ -87,19 +91,43 @@ InputUnit::wakeup()
         int vc = t_flit->get_vc();
         t_flit->increment_hops(); // for stats
 
+        if(blackhole_vc[vc] && dropping_packet_id[vc] == t_flit->getPacketID()) {
+            if(t_flit->get_type() == TAIL_) {
+                increment_credit(vc,true,curTick());
+            }
+            else{
+                increment_credit(vc,false,curTick());
+            }
+
+            if (virtualChannels[vc].isFull()) {
+                // If the VC is full, we need to free up space
+                flit* f = virtualChannels[vc].getTopFlit();
+                delete f;
+            }
+
+        }
+
         if ((t_flit->get_type() == HEAD_) ||
             (t_flit->get_type() == HEAD_TAIL_)) {
 
-            double prob = m_router->get_net_ptr()->get_bhr_probability() * 100; // Convert to percentage
-            int r = rand() % 101; // integer between 0 and 100
+            if(m_router->get_id() == 10 && t_flit->get_type() == HEAD_) {
+                if(blackhole_vc[vc]){
+                    // Empty the VC
+                    while(!virtualChannels[vc].isEmpty()) {
+                        flit* f = virtualChannels[vc].getTopFlit();
+                        delete f;
+                    }
 
-            if (m_router->get_id() == 10 && r < prob) {
-                virtualChannels[vc].set_attacked(true);
-                t_flit->attacked = true;
-                std::cout << "Attacked packet: " << t_flit->getPacketID() << std::endl;
-            } else {
-                virtualChannels[vc].set_attacked(false);
-
+                    set_vc_idle(vc,curTick());
+                    dropping_packet_id[vc] = -1;
+                    blackhole_vc[vc] = false;
+                }
+                else if(!blackhole_vc[vc] && (rand()%100 < m_router->get_net_ptr()->get_bhr_probability()*100)) {
+                    blackhole_vc[vc] = true;
+                    dropping_packet_id[vc] = t_flit->getPacketID();
+                    std::cout << "Dropping packet: " << t_flit->getPacketID() << " on VC: " << vc << std::endl;
+                    increment_credit(vc,false,curTick());
+                }
             }
 
             assert(virtualChannels[vc].get_state() == IDLE_);

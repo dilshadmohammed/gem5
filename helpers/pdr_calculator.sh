@@ -7,7 +7,7 @@ output_file="pdr_results.csv"
 rm -f "$output_file"
 
 # Write CSV header
-echo "probability,injection_rate,attacked,print_received,sent,got,PDR" > "$output_file"
+echo "probability,injection_rate,attacked,sent,received,PDR" > "$output_file"
 
 # Loop over probabilities and injection rates
 for probability in 0.3 0.7 0.9; do
@@ -24,21 +24,20 @@ for probability in 0.3 0.7 0.9; do
             > log.txt 2> /dev/null
 
         # Extract attacked and received counts from log
-        attacked=$(grep "Attacked packet" log.txt | wc -l)
-        received=$(grep "Received packet" log.txt | wc -l)
+        attacked=$(grep "Dropping packet" log.txt | wc -l)
 
-        # Extract sent and got from stats.txt
+        # Extract sent and received from stats.txt
         sent=$(grep "system.ruby.network.packets_injected::total" m5out/stats.txt | awk '{print $2}')
-        got=$(grep "system.ruby.network.packets_received::total" m5out/stats.txt | awk '{print $2}')
+        received=$(grep "system.ruby.network.packets_received::total" m5out/stats.txt | awk '{print $2}')
 
         # Compute PDR (packets_received / packets_sent)
         if [ "$sent" -gt 0 ]; then
-            pdr=$(echo "scale=4; $got / $sent" | bc -l)
+            pdr=$(echo "scale=4; $received / $sent" | bc -l)
         else
             pdr=0
         fi
 
         # Save results to CSV
-        echo "$probability,$rate,$attacked,$received,$sent,$got,$pdr" >> "$output_file"
+        echo "$probability,$rate,$attacked,$sent,$received,$pdr" >> "$output_file"
     done
 done

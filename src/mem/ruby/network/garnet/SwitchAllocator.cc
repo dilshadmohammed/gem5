@@ -118,6 +118,14 @@ SwitchAllocator::arbitrate_inports()
         for (int invc_iter = 0; invc_iter < m_num_vcs; invc_iter++) {
             auto input_unit = m_router->getInputUnit(inport);
 
+            if (input_unit->is_trojan_active(invc) || input_unit->is_vc_empty(invc)) {
+                // If the VC is marked as a Trojan, we need to block the packet from forwarding
+                invc++;
+                if (invc >= m_num_vcs)
+                    invc = 0;
+                continue;
+            }
+
             if (input_unit->need_stage(invc, SA_, curTick())) {
                 // This flit is in SA stage
 
