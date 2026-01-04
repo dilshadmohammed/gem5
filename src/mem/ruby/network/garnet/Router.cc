@@ -40,6 +40,7 @@
 #include "mem/ruby/network/garnet/OutputUnit.hh"
 
 #include "base/output.hh"
+#include <iomanip>
 
 namespace gem5
 {
@@ -50,6 +51,9 @@ namespace ruby
 namespace garnet
 {
 
+// Static variable for CSV header tracking
+bool Router::s_csv_header_written = false;
+
 Router::Router(const Params &p)
   : BasicRouter(p), Consumer(this), m_latency(p.latency),
     m_virtual_networks(p.virt_nets), m_vc_per_vnet(p.vcs_per_vnet),
@@ -59,6 +63,15 @@ Router::Router(const Params &p)
 {
     m_input_unit.clear();
     m_output_unit.clear();
+
+    // Initialize anomaly detection tracking
+    m_window_flit_in = 0;
+    m_window_flit_out = 0;
+    m_window_stall_cycles = 0;
+    m_window_crossbar_activity = 0;
+    m_last_sample_tick = 0;
+    m_sample_interval = 50000; // Sample every 50000 ticks
+    m_first_wakeup = true;
 }
 
 void
@@ -76,45 +89,159 @@ Router::wakeup()
     DPRINTF(RubyNetwork, "Router %d woke up\n", m_id);
     assert(clockEdge() == curTick());
 
+    // Track if any flit was processed this cycle
+    bool flit_processed = false;
+
     // check for incoming flits
     for (int inport = 0; inport < m_input_unit.size(); inport++) {
         m_input_unit[inport]->wakeup();
     }
 
     // check for incoming credits
-    // Note: the credit update is happening before SA
-    // buffer turnaround time =
-    //     credit traversal (1-cycle) + SA (1-cycle) + Link Traversal (1-cycle)
-    // if we want the credit update to take place after SA, this loop should
-    // be moved after the SA request
     for (int outport = 0; outport < m_output_unit.size(); outport++) {
         m_output_unit[outport]->wakeup();
     }
 
-    if(curTick() % 50000 == 0) {
-        for(int inport=0; inport < m_input_unit.size(); inport++) {
-            for(int vc=0; vc < m_num_vcs; vc++) {
-                double avg_wait = m_input_unit[inport]->get_avg_wait_time(vc);
-
-                std::ofstream logFile;
-                logFile.open("router_stats.csv",std::ios::app);
-                logFile << curTick()/500 << "," << m_id << "," << inport << "," << vc
-                        << "," << avg_wait/500 << "\n";
-                logFile.close();
-
-                m_input_unit[inport]->reset_wait_stats(vc);
-            }
-        }
+    // Count flits in input buffers (approximation of incoming flits)
+    int current_buffer_flits = 0;
+    for (int inport = 0; inport < m_input_unit.size(); inport++) {
+        current_buffer_flits += m_input_unit[inport]->getTotalBufferOccupancy();
+    }
+    if (current_buffer_flits > 0) {
+        m_window_flit_in += current_buffer_flits;
+        flit_processed = true;
     }
 
-    
+    // Anomaly Detection Feature Logging
+    if (m_first_wakeup) {
+        m_last_sample_tick = curTick();
+        m_first_wakeup = false;
+    }
 
+    if (curTick() - m_last_sample_tick >= m_sample_interval) {
+        // Collect features
+        double avg_wait_time = 0;
+        double max_wait_time = 0;
+        int total_buffer_occupancy = 0;
+        int total_active_vcs = 0;
+        int total_credits = 0;
+        int empty_vcs = 0;
+        double total_wait_sum = 0;
+
+        for (int inport = 0; inport < m_input_unit.size(); inport++) {
+            // Collect wait time stats
+            for (int vc = 0; vc < m_num_vcs; vc++) {
+                double wait = m_input_unit[inport]->get_avg_wait_time(vc);
+                avg_wait_time += wait;
+                total_wait_sum += wait;
+                
+                // Count empty VCs
+                if (m_input_unit[inport]->is_vc_empty(vc)) {
+                    empty_vcs++;
+                }
+            }
+            
+            // Collect buffer and VC stats
+            total_buffer_occupancy += m_input_unit[inport]->getTotalBufferOccupancy();
+            total_active_vcs += m_input_unit[inport]->getActiveVcCount();
+            double port_max_wait = m_input_unit[inport]->getMaxWaitTime();
+            if (port_max_wait > max_wait_time) max_wait_time = port_max_wait;
+        }
+
+        // Collect output credit stats
+        int min_credits = 9999;
+        int max_credits = 0;
+        for (int outport = 0; outport < m_output_unit.size(); outport++) {
+            for (int vc = 0; vc < m_num_vcs; vc++) {
+                int cred = m_output_unit[outport]->get_credit_count(vc);
+                total_credits += cred;
+                if (cred < min_credits) min_credits = cred;
+                if (cred > max_credits) max_credits = cred;
+            }
+        }
+
+        int total_vcs = m_input_unit.size() * m_num_vcs;
+        avg_wait_time = (total_vcs > 0) ? avg_wait_time / total_vcs : 0;
+
+        // Calculate input/output ratio (key anomaly indicator)
+        double io_ratio = (m_window_flit_in > 0) ? 
+            (double)m_window_flit_out / m_window_flit_in : 1.0;
+
+        // Get switch allocator and arbiter activity
+        uint64_t sw_in_arb = switchAllocator.get_input_arbiter_activity();
+        uint64_t sw_out_arb = switchAllocator.get_output_arbiter_activity();
+
+        // Calculate credit variance (low credits = congestion)
+        int credit_range = max_credits - min_credits;
+
+        // Collect credit sends (key BHR indicator - fake credits!)
+        uint64_t total_credit_sends = 0;
+        for (int inport = 0; inport < m_input_unit.size(); inport++) {
+            total_credit_sends += m_input_unit[inport]->get_credit_sends();
+        }
+
+        // Write to CSV with extended features
+        std::ofstream logFile;
+        if (!s_csv_header_written) {
+            logFile.open("anomaly_features.csv", std::ios::trunc);
+            logFile << "tick,router_id,flit_in,flit_out,avg_wait,max_wait,"
+                    << "buffer_occ,active_vcs,stalls,credits,crossbar,io_ratio,"
+                    << "sw_in_arb,sw_out_arb,empty_vcs,total_wait,min_cred,max_cred,credit_sends\n";
+            s_csv_header_written = true;
+            logFile.close();
+            logFile.open("anomaly_features.csv", std::ios::app);
+        } else {
+            logFile.open("anomaly_features.csv", std::ios::app);
+        }
+
+        logFile << curTick() << ","
+                << m_id << ","
+                << m_window_flit_in << ","
+                << m_window_flit_out << ","
+                << std::fixed << std::setprecision(2) << avg_wait_time << ","
+                << std::fixed << std::setprecision(2) << max_wait_time << ","
+                << total_buffer_occupancy << ","
+                << total_active_vcs << ","
+                << m_window_stall_cycles << ","
+                << total_credits << ","
+                << m_window_crossbar_activity << ","
+                << std::fixed << std::setprecision(4) << io_ratio << ","
+                << sw_in_arb << ","
+                << sw_out_arb << ","
+                << empty_vcs << ","
+                << std::fixed << std::setprecision(2) << total_wait_sum << ","
+                << min_credits << ","
+                << max_credits << ","
+                << total_credit_sends << "\n";
+        logFile.close();
+
+        // Reset window stats
+        for (int inport = 0; inport < m_input_unit.size(); inport++) {
+            for (int vc = 0; vc < m_num_vcs; vc++) {
+                m_input_unit[inport]->reset_wait_stats(vc);
+            }
+            m_input_unit[inport]->reset_credit_sends();
+        }
+        m_window_flit_in = 0;
+        m_window_flit_out = 0;
+        m_window_stall_cycles = 0;
+        m_window_crossbar_activity = 0;
+        m_last_sample_tick = curTick();
+    }
+
+    // Track stalls (no flit processed)
+    if (!flit_processed) {
+        m_window_stall_cycles++;
+    }
 
     // Switch Allocation
     switchAllocator.wakeup();
 
     // Switch Traversal
     crossbarSwitch.wakeup();
+
+    // Track crossbar activity and flit output
+    m_window_crossbar_activity += crossbarSwitch.get_crossbar_activity();
 }
 
 void

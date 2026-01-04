@@ -1,0 +1,119 @@
+diff --git a/configs/network/Network.py b/configs/network/Network.py
+index a5334741c0..0a20a2fe3a 100644
+--- a/configs/network/Network.py
++++ b/configs/network/Network.py
+@@ -118,6 +118,13 @@ def define_options(parser):
+         help="""SimpleNetwork links uses a separate physical
+             channel for each virtual network""",
+     )
++    parser.add_argument(
++        "--bhr-probability",
++        action="store",
++        default=0.0,
++        type=float,
++        help="Set the probability of BHR attack simulation.",
++    )
+ 
+ 
+ def create_network(options, ruby):
+@@ -169,6 +176,7 @@ def init_network(options, network, InterfaceClass):
+         network.ni_flit_size = options.link_width_bits / 8
+         network.routing_algorithm = options.routing_algorithm
+         network.garnet_deadlock_threshold = options.garnet_deadlock_threshold
++        network.bhr_probability = options.bhr_probability
+ 
+         # Create Bridges and connect them to the corresponding links
+         for intLink in network.int_links:
+diff --git a/pdr_results1.csv b/pdr_results1.csv
+new file mode 100644
+index 0000000000..d9d632fe26
+--- /dev/null
++++ b/pdr_results1.csv
+@@ -0,0 +1,31 @@
++probability,injection_rate,attacked,print_received,sent,got,PDR
++0.3,0.02,243,2978,3223,2978,.9239
++0.3,0.04,528,5783,6318,5783,.9153
++0.3,0.06,791,8730,9532,8730,.9158
++0.3,0.08,1126,11600,12738,11600,.9106
++0.3,0.10,1297,14658,15973,14658,.9176
++0.3,0.12,1671,17458,19155,17458,.9114
++0.3,0.14,1961,20263,22258,20263,.9103
++0.3,0.16,2205,23260,25491,23260,.9124
++0.3,0.18,2479,26187,28717,26187,.9118
++0.3,0.20,2745,29166,31959,29166,.9126
++0.7,0.02,596,2626,3223,2626,.8147
++0.7,0.04,1205,5107,6318,5107,.8083
++0.7,0.06,1848,7674,9532,7674,.8050
++0.7,0.08,2577,10150,12738,10150,.7968
++0.7,0.10,3065,12892,15973,12892,.8071
++0.7,0.12,3835,15294,19155,15294,.7984
++0.7,0.14,4439,17788,22258,17788,.7991
++0.7,0.16,5038,20429,25491,20429,.8014
++0.7,0.18,5755,22913,28717,22913,.7978
++0.7,0.20,6307,25611,31959,25611,.8013
++0.9,0.02,770,2452,3223,2452,.7607
++0.9,0.04,1556,4756,6318,4756,.7527
++0.9,0.06,2365,7157,9532,7157,.7508
++0.9,0.08,3240,9487,12738,9487,.7447
++0.9,0.10,3951,12007,15973,12007,.7517
++0.9,0.12,4917,14212,19155,14212,.7419
++0.9,0.14,5678,16551,22258,16551,.7435
++0.9,0.16,6403,19064,25491,19064,.7478
++0.9,0.18,7341,21328,28717,21328,.7426
++0.9,0.20,8129,23790,31959,23790,.7443
+diff --git a/src/mem/ruby/network/Network.cc b/src/mem/ruby/network/Network.cc
+index 757ed9498e..666f5b606f 100644
+--- a/src/mem/ruby/network/Network.cc
++++ b/src/mem/ruby/network/Network.cc
+@@ -60,6 +60,7 @@ Network::Network(const Params &p)
+ {
+     m_virtual_networks = p.number_of_virtual_networks;
+     m_control_msg_size = p.control_msg_size;
++    bhr_probability = p.bhr_probability;
+ 
+     fatal_if(p.data_msg_size > p.ruby_system->getBlockSizeBytes(),
+              "%s: data message size > cache line size", name());
+diff --git a/src/mem/ruby/network/Network.hh b/src/mem/ruby/network/Network.hh
+index 8ca68a0279..4f0ce78e2c 100644
+--- a/src/mem/ruby/network/Network.hh
++++ b/src/mem/ruby/network/Network.hh
+@@ -164,6 +164,8 @@ class Network : public ClockedObject
+     std::vector<std::vector<MessageBuffer*> > m_fromNetQueues;
+     std::vector<bool> m_ordered;
+ 
++    double bhr_probability; // Probability of BHR attack simulation
++
+   private:
+     // Global address map
+     struct AddrMapNode
+diff --git a/src/mem/ruby/network/Network.py b/src/mem/ruby/network/Network.py
+index 3e9f549f89..b0a98e8e8f 100644
+--- a/src/mem/ruby/network/Network.py
++++ b/src/mem/ruby/network/Network.py
+@@ -60,6 +60,13 @@ class RubyNetwork(ClockedObject):
+     out_port = VectorRequestPort("CPU output port")
+     master = DeprecatedParam(out_port, "`master` is now called `out_port`")
+ 
++    bhr_probability = Param.Float(
++        0.0,
++        "Probability of BHR attack simulation. "
++        "Set to 0.0 for no attacks, or a value between 0.0 and 1.0 for "
++        "attack probability.",
++    )
++
+     data_msg_size = Param.Int(
+         Parent.block_size_bytes,
+         "Size of data messages. Defaults to the parent "
+diff --git a/src/mem/ruby/network/garnet/GarnetNetwork.hh b/src/mem/ruby/network/garnet/GarnetNetwork.hh
+index db37628bea..014ac61471 100644
+--- a/src/mem/ruby/network/garnet/GarnetNetwork.hh
++++ b/src/mem/ruby/network/garnet/GarnetNetwork.hh
+@@ -75,6 +75,8 @@ class GarnetNetwork : public Network
+     int getNumRows() const { return m_num_rows; }
+     int getNumCols() { return m_num_cols; }
+ 
++    double get_bhr_probability() const { return bhr_probability; } // Probability of BHR attack simulation
++
+     // for network
+     uint32_t getNiFlitSize() const { return m_ni_flit_size; }
+     uint32_t getBuffersPerDataVC() { return m_buffers_per_data_vc; }

@@ -182,6 +182,34 @@ class InputUnit : public Consumer
 
     void resetStats();
 
+    // Anomaly detection helper methods
+    int getTotalBufferOccupancy() {
+        int total = 0;
+        for (auto& vc : virtualChannels) {
+            if (!vc.isEmpty()) total++;
+        }
+        return total;
+    }
+
+    int getActiveVcCount() {
+        int count = 0;
+        for (size_t i = 0; i < virtualChannels.size(); i++) {
+            if (virtualChannels[i].get_state() == ACTIVE_) count++;
+        }
+        return count;
+    }
+
+    double getMaxWaitTime() {
+        double max_wait = 0;
+        for (size_t vc = 0; vc < total_vc_wait_time.size(); vc++) {
+            if (vc_flit_count[vc] > 0) {
+                double avg = (double)total_vc_wait_time[vc] / vc_flit_count[vc];
+                if (avg > max_wait) max_wait = avg;
+            }
+        }
+        return max_wait;
+    }
+
   private:
     Router *m_router;
     int m_id;
@@ -204,6 +232,14 @@ class InputUnit : public Consumer
     std::vector<u_int64_t> total_vc_wait_time;
     std::vector<u_int64_t> vc_flit_count;
 
+    // Credit tracking for anomaly detection
+    uint64_t m_credit_sends;  // Total credits sent to upstream
+
+  public:
+    // Credit tracking getters/setters
+    uint64_t get_credit_sends() const { return m_credit_sends; }
+    void increment_credit_sends() { m_credit_sends++; }
+    void reset_credit_sends() { m_credit_sends = 0; }
 };
 
 } // namespace garnet

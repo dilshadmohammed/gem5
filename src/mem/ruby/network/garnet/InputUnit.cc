@@ -65,6 +65,9 @@ InputUnit::InputUnit(int id, PortDirection direction, Router *router)
     for (int i=0; i < m_num_vcs; i++) {
         virtualChannels.emplace_back();
     }
+    
+    // Initialize credit tracking
+    m_credit_sends = 0;
 }
 
 /*
@@ -189,6 +192,9 @@ InputUnit::increment_credit(int in_vc, bool free_signal, Tick curTime)
     Credit *t_credit = new Credit(in_vc, free_signal, curTime);
     creditQueue.insert(t_credit);
     m_credit_link->scheduleEventAbsolute(m_router->clockEdge(Cycles(1)));
+    
+    // Track credit sends for anomaly detection
+    m_credit_sends++;
 }
 
 bool

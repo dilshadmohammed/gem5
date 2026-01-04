@@ -163,6 +163,16 @@ class Router : public BasicRouter, public Consumer
     statistics::Scalar m_sw_output_arbiter_activity;
 
     statistics::Scalar m_crossbar_activity;
+
+    // Anomaly detection feature tracking
+    uint64_t m_window_flit_in;
+    uint64_t m_window_flit_out;
+    uint64_t m_window_stall_cycles;
+    uint64_t m_window_crossbar_activity;
+    Tick m_last_sample_tick;
+    Tick m_sample_interval;
+    bool m_first_wakeup;
+    static bool s_csv_header_written;
 };
 
 } // namespace garnet

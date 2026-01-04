@@ -1,0 +1,171 @@
+diff --git a/pdr_calculator.sh b/pdr_calculator.sh
+new file mode 100644
+index 0000000000..ed30ed34ae
+--- /dev/null
++++ b/pdr_calculator.sh
+@@ -0,0 +1,44 @@
++#!/bin/bash
++
++# Output CSV file
++output_file="pdr_results.csv"
++
++# Clean old results
++rm -f "$output_file"
++
++# Write CSV header
++echo "probability,injection_rate,attacked,print_received,sent,got,PDR" > "$output_file"
++
++# Loop over probabilities and injection rates
++for probability in 0.3 0.7 0.9; do
++    for rate in $(seq 0.02 0.02 0.20); do
++        echo "Running with probability=$probability, injection rate=$rate"
++
++        # Run gem5
++        build/X86/gem5.opt configs/example/garnet_synth_traffic.py \
++            --num-cpus=16 --num-dirs=16 --sys-clock=2GHz \
++            --topology=Mesh_XY --mesh-rows=4 --ruby \
++            --num-l2caches=64 --network=garnet --mem-size=8GB \
++            --caches --l2cache --routing-algorithm=1 \
++            --sim-cycles=5000000 --injectionrate=$rate --bhr-probability=$probability \
++            > log.txt 2> /dev/null
++
++        # Extract attacked and received counts from log
++        attacked=$(grep "Attacked packet" log.txt | wc -l)
++        received=$(grep "Received packet" log.txt | wc -l)
++
++        # Extract sent and got from stats.txt
++        sent=$(grep "system.ruby.network.packets_injected::total" m5out/stats.txt | awk '{print $2}')
++        got=$(grep "system.ruby.network.packets_received::total" m5out/stats.txt | awk '{print $2}')
++
++        # Compute PDR (packets_received / packets_sent)
++        if [ "$sent" -gt 0 ]; then
++            pdr=$(echo "scale=4; $got / $sent" | bc -l)
++        else
++            pdr=0
++        fi
++
++        # Save results to CSV
++        echo "$probability,$rate,$attacked,$received,$sent,$got,$pdr" >> "$output_file"
++    done
++done
+diff --git a/src/mem/ruby/network/garnet/InputUnit.cc b/src/mem/ruby/network/garnet/InputUnit.cc
+index 179bb642b7..bff58fe546 100644
+--- a/src/mem/ruby/network/garnet/InputUnit.cc
++++ b/src/mem/ruby/network/garnet/InputUnit.cc
+@@ -90,6 +90,18 @@ InputUnit::wakeup()
+         if ((t_flit->get_type() == HEAD_) ||
+             (t_flit->get_type() == HEAD_TAIL_)) {
+ 
++            double prob = m_router->get_net_ptr()->get_bhr_probability() * 100; // Convert to percentage
++            int r = rand() % 101; // integer between 0 and 100
++
++            if (m_router->get_id() == 10 && r < prob) {
++                virtualChannels[vc].set_attacked(true);
++                t_flit->attacked = true;
++                std::cout << "Attacked packet: " << t_flit->getPacketID() << std::endl;
++            } else {
++                virtualChannels[vc].set_attacked(false);
++
++            }
++
+             assert(virtualChannels[vc].get_state() == IDLE_);
+             set_vc_active(vc, curTick());
+ 
+@@ -104,6 +116,9 @@ InputUnit::wakeup()
+ 
+         } else {
+             assert(virtualChannels[vc].get_state() == ACTIVE_);
++            if (virtualChannels[vc].is_attacked()) {
++                t_flit->attacked = true;
++            }
+         }
+ 
+ 
+diff --git a/src/mem/ruby/network/garnet/NetworkInterface.cc b/src/mem/ruby/network/garnet/NetworkInterface.cc
+index 31d625c4d5..c6ead00d89 100644
+--- a/src/mem/ruby/network/garnet/NetworkInterface.cc
++++ b/src/mem/ruby/network/garnet/NetworkInterface.cc
+@@ -229,6 +229,21 @@ NetworkInterface::wakeup()
+         NetworkLink *inNetLink = iPort->inNetLink();
+         if (inNetLink->isReady(curTick())) {
+             flit *t_flit = inNetLink->consumeLink();
++            if (t_flit->attacked) {
++                if (t_flit->get_type() == TAIL_ || t_flit->get_type() == HEAD_TAIL_) {
++                    Credit *cFlit = new Credit(t_flit->get_vc(), true, curTick());
++                    iPort->sendCredit(cFlit);
++                }
++                else {
++                    Credit *cFlit = new Credit(t_flit->get_vc(), false, curTick());
++                    iPort->sendCredit(cFlit);
++                }
++                delete t_flit;
++                continue;
++            }
++            if (t_flit->get_type() == TAIL_ || t_flit->get_type() == HEAD_TAIL_){
++                std::cout << "Received packet: " << t_flit->getPacketID() << std::endl;
++            }
+             DPRINTF(RubyNetwork, "Recieved flit:%s\n", *t_flit);
+             assert(t_flit->m_width == iPort->bitWidth());
+ 
+@@ -238,6 +253,7 @@ NetworkInterface::wakeup()
+             // If a tail flit is received, enqueue into the protocol buffers
+             // if space is available. Otherwise, exchange non-tail flits for
+             // credits.
++
+             if (t_flit->get_type() == TAIL_ ||
+                 t_flit->get_type() == HEAD_TAIL_) {
+                 if (!iPort->messageEnqueuedThisCycle &&
+diff --git a/src/mem/ruby/network/garnet/VirtualChannel.hh b/src/mem/ruby/network/garnet/VirtualChannel.hh
+index 04b046b697..f74b6054c8 100644
+--- a/src/mem/ruby/network/garnet/VirtualChannel.hh
++++ b/src/mem/ruby/network/garnet/VirtualChannel.hh
+@@ -52,6 +52,8 @@ class VirtualChannel
+     VirtualChannel();
+     ~VirtualChannel() = default;
+ 
++    void set_attacked(bool attack_status) { attacked = attack_status; }
++    bool is_attacked() const { return attacked; }
+     bool need_stage(flit_stage stage, Tick time);
+     void set_idle(Tick curTime);
+     void set_active(Tick curTime);
+@@ -104,6 +106,7 @@ class VirtualChannel
+     int m_output_port;
+     Tick m_enqueue_time;
+     int m_output_vc;
++    bool attacked = false;
+ };
+ 
+ } // namespace garnet
+diff --git a/src/mem/ruby/network/garnet/flit.cc b/src/mem/ruby/network/garnet/flit.cc
+index d31d826c93..b165326989 100644
+--- a/src/mem/ruby/network/garnet/flit.cc
++++ b/src/mem/ruby/network/garnet/flit.cc
+@@ -60,6 +60,7 @@ flit::flit(int packet_id, int id, int  vc, int vnet, RouteInfo route, int size,
+     m_stage.second = curTime;
+     m_width = bWidth;
+     msgSize = MsgSize;
++    attacked = false;
+ 
+     if (size == 1) {
+         m_type = HEAD_TAIL_;
+@@ -122,6 +123,7 @@ flit::print(std::ostream& out) const
+     out << "Dest Router=" << m_route.dest_router << " ";
+     out << "Set Time=" << m_time << " ";
+     out << "Width=" << m_width<< " ";
++    out << "Attacked=" << attacked << " ";
+     out << "]";
+ }
+ 
+diff --git a/src/mem/ruby/network/garnet/flit.hh b/src/mem/ruby/network/garnet/flit.hh
+index a52d7416ae..0344d8fcc4 100644
+--- a/src/mem/ruby/network/garnet/flit.hh
++++ b/src/mem/ruby/network/garnet/flit.hh
+@@ -115,6 +115,8 @@ class flit
+ 
+     uint32_t m_width;
+     int msgSize;
++    bool attacked = false;
++
+   protected:
+     int m_packet_id;
+     int m_id;
