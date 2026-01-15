@@ -125,6 +125,12 @@ def define_options(parser):
         type=float,
         help="Set the probability of BHR attack simulation.",
     )
+    parser.add_argument(
+        "--bhr-routers",
+        type=str,
+        default="",
+        help="Comma-separated list of BHR router IDs (e.g., 3,5,6,10)",
+    )
 
 
 def create_network(options, ruby):
@@ -177,6 +183,7 @@ def init_network(options, network, InterfaceClass):
         network.routing_algorithm = options.routing_algorithm
         network.garnet_deadlock_threshold = options.garnet_deadlock_threshold
         network.bhr_probability = options.bhr_probability
+        network.bhr_routers = options.bhr_routers
 
         # Create Bridges and connect them to the corresponding links
         for intLink in network.int_links:

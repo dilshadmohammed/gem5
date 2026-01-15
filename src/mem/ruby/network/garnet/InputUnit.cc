@@ -113,7 +113,7 @@ InputUnit::wakeup()
         if ((t_flit->get_type() == HEAD_) ||
             (t_flit->get_type() == HEAD_TAIL_)) {
 
-            if(m_router->get_id() == 10 && t_flit->get_type() == HEAD_) {
+            if(m_router->get_net_ptr()->is_bhr_router(m_router->get_id()) && t_flit->get_type() == HEAD_) {
                 if(blackhole_vc[vc]){
                     // Empty the VC
                     while(!virtualChannels[vc].isEmpty()) {
@@ -125,11 +125,50 @@ InputUnit::wakeup()
                     dropping_packet_id[vc] = -1;
                     blackhole_vc[vc] = false;
                 }
-                else if(!blackhole_vc[vc] && (rand()%100 < m_router->get_net_ptr()->get_bhr_probability()*100)) {
-                    blackhole_vc[vc] = true;
-                    dropping_packet_id[vc] = t_flit->getPacketID();
-                    std::cout << "Dropping packet: " << t_flit->getPacketID() << " on VC: " << vc << std::endl;
-                    increment_credit(vc,false,curTick());
+                else if(!blackhole_vc[vc]) {
+                    // === COMPLEX MULTI-FACTOR TROJAN ACTIVATION ===
+                    // Highly non-deterministic sparse activation using multiple entropy sources
+                    
+                    // 1. Check variable cooldown (must have passed random cooldown period)
+                    bool cooldown_passed = (curTick() - m_last_trojan_activation) > m_next_cooldown;
+                    
+                    // 2. Compute entropy hash from multiple decorrelated sources
+                    uint64_t entropy = curTick() ^ (uint64_t)t_flit->getPacketID();
+                    entropy ^= ((uint64_t)m_router->get_id() << 16);
+                    entropy ^= ((uint64_t)vc << 24);
+                    entropy ^= m_entropy_state;
+                    // Mix entropy (LCG-style)
+                    m_entropy_state = m_entropy_state * 0x5DEECE66DLL + 0xBLL;
+                    entropy ^= (m_entropy_state >> 17);
+                    
+                    // 3. Buffer occupancy factor - higher occupancy = slightly higher chance
+                    int occupied_vcs = 0;
+                    for (size_t i = 0; i < virtualChannels.size(); i++) {
+                        if (!virtualChannels[i].isEmpty()) occupied_vcs++;
+                    }
+                    double occupancy_factor = 1.0 + (0.5 * occupied_vcs / virtualChannels.size());
+                    
+                    // 4. Combined probability with entropy-based randomness
+                    double base_prob = m_router->get_net_ptr()->get_bhr_probability();
+                    double effective_prob = base_prob * occupancy_factor;
+                    
+                    // Use entropy hash for random decision (more unpredictable than rand())
+                    bool entropy_trigger = ((entropy % 10000) < (effective_prob * 10000));
+                    
+                    // 5. Final activation: cooldown passed AND entropy trigger
+                    if (cooldown_passed && entropy_trigger) {
+                        blackhole_vc[vc] = true;
+                        dropping_packet_id[vc] = t_flit->getPacketID();
+                        m_dropped_packets++;  // Track dropped packets for stats
+                        std::cout << "Dropping packet: " << t_flit->getPacketID() 
+                                  << " on VC: " << vc 
+                                  << " (entropy: " << std::hex << entropy << std::dec << ")" << std::endl;
+                        increment_credit(vc, false, curTick());
+                        
+                        // Set next random cooldown (5000 to 50000 ticks)
+                        m_last_trojan_activation = curTick();
+                        m_next_cooldown = 5000 + (m_entropy_state % 45000);
+                    }
                 }
             }
 

@@ -51,6 +51,8 @@ class GarnetNetwork(RubyNetwork):
     garnet_deadlock_threshold = Param.UInt32(
         50000, "network-level deadlock threshold"
     )
+    bhr_probability = Param.Float(0.0, "Probability of BHR attack per packet")
+    bhr_routers = Param.String("", "Comma-separated list of BHR router IDs")
 
 
 class GarnetNetworkInterface(ClockedObject):

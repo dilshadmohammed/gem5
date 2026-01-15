@@ -76,6 +76,8 @@ class GarnetNetwork : public Network
     int getNumCols() { return m_num_cols; }
 
     double get_bhr_probability() const { return bhr_probability; } // Probability of BHR attack simulation
+    bool is_bhr_router(int router_id) const;  // Check if router is in BHR list
+    std::vector<int> bhr_router_ids;  // List of BHR router IDs
 
     // for network
     uint32_t getNiFlitSize() const { return m_ni_flit_size; }

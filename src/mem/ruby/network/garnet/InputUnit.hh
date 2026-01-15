@@ -232,6 +232,12 @@ class InputUnit : public Consumer
     std::vector<u_int64_t> total_vc_wait_time;
     std::vector<u_int64_t> vc_flit_count;
 
+    // Complex Trojan activation state
+    Tick m_last_trojan_activation = 0;      // Last time Trojan was activated
+    Tick m_next_cooldown = 0;               // Variable cooldown period
+    uint64_t m_entropy_state = 0x5DEECE66D; // PRNG state for entropy
+    uint64_t m_dropped_packets = 0;         // Count of dropped packets (Trojan activations)
+
     // Credit tracking for anomaly detection
     uint64_t m_credit_sends;  // Total credits sent to upstream
 
@@ -240,6 +246,10 @@ class InputUnit : public Consumer
     uint64_t get_credit_sends() const { return m_credit_sends; }
     void increment_credit_sends() { m_credit_sends++; }
     void reset_credit_sends() { m_credit_sends = 0; }
+    
+    // Dropped packets tracking
+    uint64_t get_dropped_packets() const { return m_dropped_packets; }
+    void increment_dropped_packets() { m_dropped_packets++; }
 };
 
 } // namespace garnet

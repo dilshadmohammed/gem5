@@ -164,6 +164,9 @@ class Router : public BasicRouter, public Consumer
 
     statistics::Scalar m_crossbar_activity;
 
+    // Trojan stats
+    statistics::Scalar m_dropped_packets;
+
     // Anomaly detection feature tracking
     uint64_t m_window_flit_in;
     uint64_t m_window_flit_out;

@@ -364,6 +364,12 @@ Router::regStats()
         .name(name() + ".sw_output_arbiter_activity")
         .flags(statistics::nozero)
     ;
+
+    m_dropped_packets
+        .name(name() + ".dropped_packets")
+        .desc("Number of packets dropped by Trojan (BHR activations)")
+        .flags(statistics::nozero)
+    ;
 }
 
 void
@@ -380,6 +386,11 @@ Router::collateStats()
     m_sw_output_arbiter_activity =
         switchAllocator.get_output_arbiter_activity();
     m_crossbar_activity = crossbarSwitch.get_crossbar_activity();
+
+    // Collate dropped packets from all input units
+    for (int i = 0; i < m_input_unit.size(); i++) {
+        m_dropped_packets += m_input_unit[i]->get_dropped_packets();
+    }
 }
 
 void

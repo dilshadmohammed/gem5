@@ -32,6 +32,8 @@
 #include "mem/ruby/network/garnet/GarnetNetwork.hh"
 
 #include <cassert>
+#include <sstream>
+#include <algorithm>
 
 #include "base/cast.hh"
 #include "base/compiler.hh"
@@ -105,6 +107,20 @@ GarnetNetwork::GarnetNetwork(const Params &p)
 
     // Print Garnet version
     inform("Garnet version %s\n", garnetVersion);
+    
+    // Parse bhr_routers string (e.g., "3,5,6,10") into vector
+    bhr_probability = p.bhr_probability;
+    std::string bhr_str = p.bhr_routers;
+    if (!bhr_str.empty()) {
+        std::stringstream ss(bhr_str);
+        std::string token;
+        while (std::getline(ss, token, ',')) {
+            bhr_router_ids.push_back(std::stoi(token));
+        }
+        std::cout << "BHR Routers configured: ";
+        for (int id : bhr_router_ids) std::cout << id << " ";
+        std::cout << "(probability=" << bhr_probability << ")" << std::endl;
+    }
 }
 
 void
@@ -379,6 +395,14 @@ GarnetNetwork::get_router_id(int global_ni, int vnet)
     NodeID local_ni = getLocalNodeID(global_ni);
 
     return m_nis[local_ni]->get_router_id(vnet);
+}
+
+// Check if a router is configured as a BHR router
+bool
+GarnetNetwork::is_bhr_router(int router_id) const
+{
+    return std::find(bhr_router_ids.begin(), bhr_router_ids.end(), router_id)
+           != bhr_router_ids.end();
 }
 
 void
