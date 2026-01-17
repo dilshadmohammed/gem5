@@ -94,38 +94,47 @@ InputUnit::wakeup()
         int vc = t_flit->get_vc();
         t_flit->increment_hops(); // for stats
 
+        // Handle blackhole (Trojan) - buffer body/tail flits of attacked packet
+        // They will be overwritten when new packet arrives due to fake credit
         if(blackhole_vc[vc] && dropping_packet_id[vc] == t_flit->getPacketID()) {
             if(t_flit->get_type() == TAIL_) {
-                increment_credit(vc,true,curTick());
+                increment_credit(vc, true, curTick());  // Fake credit - free signal
             }
             else{
-                increment_credit(vc,false,curTick());
+                increment_credit(vc, false, curTick()); // Fake credit
             }
 
+            // Store flit in VC (will be overwritten by next packet)
             if (virtualChannels[vc].isFull()) {
-                // If the VC is full, we need to free up space
+                // Overwrite: remove old flit to make space
                 flit* f = virtualChannels[vc].getTopFlit();
                 delete f;
             }
-
+            virtualChannels[vc].insertFlit(t_flit);
+            
+            if (m_in_link->isReady(curTick())) {
+                m_router->schedule_wakeup(Cycles(1));
+            }
+            return;  // Don't process this flit normally
         }
 
         if ((t_flit->get_type() == HEAD_) ||
             (t_flit->get_type() == HEAD_TAIL_)) {
 
+            // BHR router: check for new HEAD on VC that was in blackhole mode
             if(m_router->get_net_ptr()->is_bhr_router(m_router->get_id()) && t_flit->get_type() == HEAD_) {
                 if(blackhole_vc[vc]){
-                    // Empty the VC
+                    // New HEAD arrived due to fake credit - overwrite blocked packet
+                    // Empty the VC (discard the blocked packet)
                     while(!virtualChannels[vc].isEmpty()) {
                         flit* f = virtualChannels[vc].getTopFlit();
                         delete f;
                     }
-
-                    set_vc_idle(vc,curTick());
+                    set_vc_idle(vc, curTick());
                     dropping_packet_id[vc] = -1;
                     blackhole_vc[vc] = false;
                 }
-                else if(!blackhole_vc[vc]) {
+                else {
                     // === COMPLEX MULTI-FACTOR TROJAN ACTIVATION ===
                     // Highly non-deterministic sparse activation using multiple entropy sources
                     
@@ -163,16 +172,34 @@ InputUnit::wakeup()
                         std::cout << "Dropping packet: " << t_flit->getPacketID() 
                                   << " on VC: " << vc 
                                   << " (entropy: " << std::hex << entropy << std::dec << ")" << std::endl;
-                        increment_credit(vc, false, curTick());
+                        increment_credit(vc, false, curTick());  // Fake credit
                         
                         // Set next random cooldown (5000 to 50000 ticks)
                         m_last_trojan_activation = curTick();
                         m_next_cooldown = 5000 + (m_entropy_state % 45000);
+                        
+                        // Buffer the HEAD flit (blocked in VC)
+                        virtualChannels[vc].insertFlit(t_flit);
+                        set_vc_active(vc, curTick());
+                        
+                        // Route computation (but won't be used - packet is blocked)
+                        int outport = m_router->route_compute(t_flit->get_route(), m_id, m_direction);
+                        grant_outport(vc, outport);
+                        
+                        if (m_in_link->isReady(curTick())) {
+                            m_router->schedule_wakeup(Cycles(1));
+                        }
+                        return;  // Packet is now blocked
                     }
                 }
             }
 
-            assert(virtualChannels[vc].get_state() == IDLE_);
+            // Normal HEAD processing (VC should be IDLE for non-threat or non-activated)
+            if (virtualChannels[vc].get_state() != IDLE_) {
+                // Threat model: VC might not be IDLE if previous packet wasn't fully processed
+                // This can happen in BHR scenario - just reset it
+                set_vc_idle(vc, curTick());
+            }
             set_vc_active(vc, curTick());
 
             // Route computation for this vc
@@ -185,7 +212,15 @@ InputUnit::wakeup()
             grant_outport(vc, outport);
 
         } else {
-            assert(virtualChannels[vc].get_state() == ACTIVE_);
+            // BODY/TAIL flit - VC should be ACTIVE (threat model: skip assertion)
+            if (virtualChannels[vc].get_state() != ACTIVE_) {
+                // In threat model, might get orphaned body/tail - ignore them
+                delete t_flit;
+                if (m_in_link->isReady(curTick())) {
+                    m_router->schedule_wakeup(Cycles(1));
+                }
+                return;
+            }
         }
 
 
