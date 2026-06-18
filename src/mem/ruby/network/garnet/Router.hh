@@ -39,6 +39,7 @@
 #include "mem/ruby/common/Consumer.hh"
 #include "mem/ruby/common/NetDest.hh"
 #include "mem/ruby/network/BasicRouter.hh"
+#include "mem/ruby/network/garnet/BhrAutoencoder.hh"
 #include "mem/ruby/network/garnet/CommonTypes.hh"
 #include "mem/ruby/network/garnet/CrossbarSwitch.hh"
 #include "mem/ruby/network/garnet/GarnetNetwork.hh"
@@ -89,6 +90,8 @@ class Router : public BasicRouter, public Consumer
     int get_num_inports()   { return m_input_unit.size(); }
     int get_num_outports()  { return m_output_unit.size(); }
     int get_id()            { return m_id; }
+    bool isTrojanActive() const { return m_trojan_active; }
+    float getAnomalyScore() const { return m_anomaly_score; }
 
     void init_net_ptr(GarnetNetwork* net_ptr)
     {
@@ -175,6 +178,9 @@ class Router : public BasicRouter, public Consumer
     Tick m_last_sample_tick;
     Tick m_sample_interval;
     bool m_first_wakeup;
+    BhrAutoencoder m_bhr_detector;
+    bool m_trojan_active;
+    float m_anomaly_score;
     static bool s_csv_header_written;
 };
 
