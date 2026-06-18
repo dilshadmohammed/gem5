@@ -72,6 +72,8 @@ Router::Router(const Params &p)
     m_last_sample_tick = 0;
     m_sample_interval = 50000; // Sample every 50000 ticks
     m_first_wakeup = true;
+    m_trojan_active = false;
+    m_anomaly_score = 0.0f;
 }
 
 void
@@ -180,13 +182,42 @@ Router::wakeup()
             total_credit_sends += m_input_unit[inport]->get_credit_sends();
         }
 
-        // Write to CSV with extended features
+        BhrAutoencoder::Features features = {{
+            static_cast<float>(m_window_flit_in),
+            static_cast<float>(m_window_flit_out),
+            static_cast<float>(avg_wait_time),
+            static_cast<float>(max_wait_time),
+            static_cast<float>(total_buffer_occupancy),
+            static_cast<float>(total_active_vcs),
+            static_cast<float>(m_window_stall_cycles),
+            static_cast<float>(total_credits),
+            static_cast<float>(m_window_crossbar_activity),
+            static_cast<float>(io_ratio),
+            static_cast<float>(sw_in_arb),
+            static_cast<float>(sw_out_arb),
+            static_cast<float>(empty_vcs),
+            static_cast<float>(total_wait_sum),
+            static_cast<float>(min_credits),
+            static_cast<float>(max_credits),
+            static_cast<float>(total_credit_sends)
+        }};
+        const bool anomaly = m_bhr_detector.isAnomaly(features,
+                                                       &m_anomaly_score);
+        if (anomaly && !m_trojan_active) {
+            m_trojan_active = true;
+            DPRINTF(RubyNetwork, "Router %d detected an active Trojan "
+                    "with reconstruction error %.6f\n", m_id,
+                    m_anomaly_score);
+        }
+
+        // Write to CSV with extended features and the in-simulator result
         std::ofstream logFile;
         if (!s_csv_header_written) {
             logFile.open("anomaly_features.csv", std::ios::trunc);
             logFile << "tick,router_id,flit_in,flit_out,avg_wait,max_wait,"
                     << "buffer_occ,active_vcs,stalls,credits,crossbar,io_ratio,"
-                    << "sw_in_arb,sw_out_arb,empty_vcs,total_wait,min_cred,max_cred,credit_sends\n";
+                    << "sw_in_arb,sw_out_arb,empty_vcs,total_wait,min_cred,max_cred,credit_sends,"
+                    << "anomaly_score,trojan_active\n";
             s_csv_header_written = true;
             logFile.close();
             logFile.open("anomaly_features.csv", std::ios::app);
@@ -212,7 +243,9 @@ Router::wakeup()
                 << std::fixed << std::setprecision(2) << total_wait_sum << ","
                 << min_credits << ","
                 << max_credits << ","
-                << total_credit_sends << "\n";
+                << total_credit_sends << ","
+                << std::fixed << std::setprecision(6) << m_anomaly_score << ","
+                << m_trojan_active << "\n";
         logFile.close();
 
         // Reset window stats

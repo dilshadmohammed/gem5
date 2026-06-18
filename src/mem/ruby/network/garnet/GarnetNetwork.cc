@@ -388,6 +388,14 @@ GarnetNetwork::getNumRouters()
     return m_routers.size();
 }
 
+bool
+GarnetNetwork::isTrojanActive(int router_id) const
+{
+    assert(router_id >= 0 &&
+           static_cast<size_t>(router_id) < m_routers.size());
+    return m_routers[router_id]->isTrojanActive();
+}
+
 // Get ID of router connected to a NI.
 int
 GarnetNetwork::get_router_id(int global_ni, int vnet)
