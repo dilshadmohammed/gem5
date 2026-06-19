@@ -77,6 +77,7 @@ class GarnetNetwork : public Network
 
     double get_bhr_probability() const { return bhr_probability; } // Probability of BHR attack simulation
     bool is_bhr_router(int router_id) const;  // Check if router is in BHR list
+    bool isTrojanActive(int router_id) const;
     std::vector<int> bhr_router_ids;  // List of BHR router IDs
 
     // for network
@@ -203,6 +204,14 @@ class GarnetNetwork : public Network
 
     statistics::Scalar  m_total_hops;
     statistics::Formula m_avg_hops;
+
+    statistics::Scalar m_total_infected_packets;
+    statistics::Scalar m_total_detected_infected_packets;
+    statistics::Scalar m_total_missed_infected_packets;
+    statistics::Scalar m_total_detection_events;
+    statistics::Scalar m_total_false_positive_detection_events;
+    statistics::Formula m_detection_precision;
+    statistics::Formula m_detection_recall;
 
     std::vector<std::vector<statistics::Scalar *>> m_data_traffic_distribution;
     std::vector<std::vector<statistics::Scalar *>> m_ctrl_traffic_distribution;

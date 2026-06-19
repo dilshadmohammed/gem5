@@ -59,3 +59,34 @@ For BHR attack data (e.g., probability=0.1), Router 10 should show:
 - Higher anomaly rate than other routers
 - Higher average anomaly score
 - Significantly higher `flit_in` and `credit_sends`
+
+## In-simulator C++ detection
+
+Garnet embeds the trained scaler, threshold, and autoencoder parameters from
+`bhr_autoencoder.pth` in a dependency-free C++ inference implementation. At
+each feature-sampling window, the router computes a reconstruction error and
+latches `trojan_active` when that error exceeds the model threshold. The CSV
+output includes `anomaly_score`, `trojan_active`, per-window infected packet
+counts, per-window detected infected packet counts, and cumulative infected and
+detected-infected packet totals for inspection. Router stats also expose
+`infected_packets`, `detected_infected_packets`, `missed_infected_packets`,
+`detection_events`, `false_positive_detection_events`, `detection_precision`,
+and `detection_recall` to support precision/recall reporting. The GarnetNetwork
+object also reports network-wide `total_infected_packets`,
+`total_detected_infected_packets`, `total_missed_infected_packets`,
+`total_detection_events`, `total_false_positive_detection_events`,
+`detection_precision`, and `detection_recall` totals.
+
+Routing algorithm `2` is DYXY routing for mesh topologies. When both minimal
+next-hop directions are available, it avoids a neighbor whose embedded model
+has latched `trojan_active`; otherwise, it selects the direction with more
+downstream credits.
+
+After retraining, regenerate the embedded C++ parameters without installing
+PyTorch, NumPy, or scikit-learn:
+
+```bash
+python3 anomaly_detection/export_bhr_model.py \
+    anomaly_detection/bhr_autoencoder.pth \
+    src/mem/ruby/network/garnet/BhrAutoencoderParams.hh
+```

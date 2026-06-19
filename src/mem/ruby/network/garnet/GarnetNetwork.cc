@@ -388,6 +388,14 @@ GarnetNetwork::getNumRouters()
     return m_routers.size();
 }
 
+bool
+GarnetNetwork::isTrojanActive(int router_id) const
+{
+    assert(router_id >= 0 &&
+           static_cast<size_t>(router_id) < m_routers.size());
+    return m_routers[router_id]->isTrojanActive();
+}
+
 // Get ID of router connected to a NI.
 int
 GarnetNetwork::get_router_id(int global_ni, int vnet)
@@ -536,6 +544,56 @@ GarnetNetwork::regStats()
     m_avg_hops.name(name() + ".average_hops");
     m_avg_hops = m_total_hops / sum(m_flits_received);
 
+    // BHR detection totals across all routers
+    m_total_infected_packets
+        .name(name() + ".total_infected_packets")
+        .desc("Total ground-truth packets infected by BHR Trojan activation")
+        .flags(statistics::nozero)
+    ;
+
+    m_total_detected_infected_packets
+        .name(name() + ".total_detected_infected_packets")
+        .desc("Total infected packets in windows detected by the model")
+        .flags(statistics::nozero)
+    ;
+
+    m_total_missed_infected_packets
+        .name(name() + ".total_missed_infected_packets")
+        .desc("Total infected packets in windows missed by the model")
+        .flags(statistics::nozero)
+    ;
+
+    m_total_detection_events
+        .name(name() + ".total_detection_events")
+        .desc("Total sampling windows flagged anomalous by the model")
+        .flags(statistics::nozero)
+    ;
+
+    m_total_false_positive_detection_events
+        .name(name() + ".total_false_positive_detection_events")
+        .desc("Total model-detected windows with no infected packets")
+        .flags(statistics::nozero)
+    ;
+
+    m_detection_precision
+        .name(name() + ".detection_precision")
+        .desc("Network-level precision proxy: detected infected packets "
+              "divided by detected infected packets plus false-positive windows")
+        .precision(6)
+    ;
+    m_detection_precision = m_total_detected_infected_packets /
+        (m_total_detected_infected_packets +
+         m_total_false_positive_detection_events);
+
+    m_detection_recall
+        .name(name() + ".detection_recall")
+        .desc("Network-level packet recall: detected infected packets divided "
+              "by infected packets")
+        .precision(6)
+    ;
+    m_detection_recall = m_total_detected_infected_packets /
+        m_total_infected_packets;
+
     // Links
     m_total_ext_in_link_utilization
         .name(name() + ".ext_in_link_utilization");
@@ -600,10 +658,29 @@ GarnetNetwork::collateStats()
         }
     }
 
-    // Ask the routers to collate their statistics
+    uint64_t infected_packets = 0;
+    uint64_t detected_infected_packets = 0;
+    uint64_t missed_infected_packets = 0;
+    uint64_t detection_events = 0;
+    uint64_t false_positive_detection_events = 0;
+
+    // Ask the routers to collate their statistics and aggregate BHR counters.
     for (int i = 0; i < m_routers.size(); i++) {
         m_routers[i]->collateStats();
+        infected_packets += m_routers[i]->getTotalInfectedPackets();
+        detected_infected_packets +=
+            m_routers[i]->getTotalDetectedInfectedPackets();
+        missed_infected_packets += m_routers[i]->getTotalMissedInfectedPackets();
+        detection_events += m_routers[i]->getTotalDetectionEvents();
+        false_positive_detection_events +=
+            m_routers[i]->getTotalFalsePositiveDetectionEvents();
     }
+
+    m_total_infected_packets = infected_packets;
+    m_total_detected_infected_packets = detected_infected_packets;
+    m_total_missed_infected_packets = missed_infected_packets;
+    m_total_detection_events = detection_events;
+    m_total_false_positive_detection_events = false_positive_detection_events;
 }
 
 void

@@ -73,10 +73,13 @@ class RoutingUnit
                          int inport,
                          PortDirection inport_dirn);
 
-    // Custom Routing Algorithm using Port Directions
-    int outportComputeCustom(RouteInfo route,
-                             int inport,
-                             PortDirection inport_dirn);
+    // Dynamic XY routing with model-detected Trojan avoidance
+    int outportComputeDyxy(RouteInfo route,
+                           int inport,
+                           PortDirection inport_dirn);
+
+    int getDirectionCreditCount(PortDirection direction) const;
+    bool isDirectionTrojanActive(PortDirection direction) const;
 
     // Returns true if vnet is present in the vector
     // of vnets or if the vector supports all vnets.

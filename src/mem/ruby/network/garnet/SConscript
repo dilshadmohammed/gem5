@@ -37,6 +37,7 @@ SimObject('GarnetLink.py', enums=['CDCType'], sim_objects=[
 SimObject('GarnetNetwork.py', sim_objects=[
     'GarnetNetwork', 'GarnetNetworkInterface', 'GarnetRouter'])
 
+Source('BhrAutoencoder.cc')
 Source('GarnetLink.cc')
 Source('GarnetNetwork.cc')
 Source('InputUnit.cc')

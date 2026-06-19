@@ -34,6 +34,7 @@
 #include "base/compiler.hh"
 #include "debug/RubyNetwork.hh"
 #include "mem/ruby/network/garnet/InputUnit.hh"
+#include "mem/ruby/network/garnet/OutputUnit.hh"
 #include "mem/ruby/network/garnet/Router.hh"
 #include "mem/ruby/slicc_interface/Message.hh"
 
@@ -190,9 +191,8 @@ RoutingUnit::outportCompute(RouteInfo route, int inport,
             lookupRoutingTable(route.vnet, route.net_dest); break;
         case XY_:     outport =
             outportComputeXY(route, inport, inport_dirn); break;
-        // any custom algorithm
-        case CUSTOM_: outport =
-            outportComputeCustom(route, inport, inport_dirn); break;
+        case DYXY_:  outport =
+            outportComputeDyxy(route, inport, inport_dirn); break;
         default: outport =
             lookupRoutingTable(route.vnet, route.net_dest); break;
     }
@@ -260,14 +260,78 @@ RoutingUnit::outportComputeXY(RouteInfo route,
     return m_outports_dirn2idx[outport_dirn];
 }
 
-// Template for implementing custom routing algorithm
-// using port directions. (Example adaptive)
+// Dynamic XY routing in a mesh. When both minimal directions are available,
+// route away from a next-hop router that the embedded BHR model has flagged.
+// Otherwise, prefer the direction with more downstream credits.
 int
-RoutingUnit::outportComputeCustom(RouteInfo route,
-                                 int inport,
-                                 PortDirection inport_dirn)
+RoutingUnit::outportComputeDyxy(RouteInfo route,
+                                int,
+                                PortDirection)
 {
-    panic("%s placeholder executed", __FUNCTION__);
+    int num_rows = m_router->get_net_ptr()->getNumRows();
+    int num_cols = m_router->get_net_ptr()->getNumCols();
+    assert(num_rows > 0 && num_cols > 0);
+
+    int my_id = m_router->get_id();
+    int my_x = my_id % num_cols;
+    int my_y = my_id / num_cols;
+    int dest_x = route.dest_router % num_cols;
+    int dest_y = route.dest_router / num_cols;
+
+    PortDirection x_direction = "Unknown";
+    PortDirection y_direction = "Unknown";
+    if (dest_x > my_x)
+        x_direction = "East";
+    else if (dest_x < my_x)
+        x_direction = "West";
+    if (dest_y > my_y)
+        y_direction = "North";
+    else if (dest_y < my_y)
+        y_direction = "South";
+
+    if (x_direction == "Unknown")
+        return m_outports_dirn2idx[y_direction];
+    if (y_direction == "Unknown")
+        return m_outports_dirn2idx[x_direction];
+
+    const bool x_trojan = isDirectionTrojanActive(x_direction);
+    const bool y_trojan = isDirectionTrojanActive(y_direction);
+    if (x_trojan != y_trojan) {
+        return m_outports_dirn2idx[x_trojan ? y_direction : x_direction];
+    }
+
+    const int x_credits = getDirectionCreditCount(x_direction);
+    const int y_credits = getDirectionCreditCount(y_direction);
+    return m_outports_dirn2idx[x_credits >= y_credits ? x_direction :
+                                                        y_direction];
+}
+
+int
+RoutingUnit::getDirectionCreditCount(PortDirection direction) const
+{
+    auto output = m_router->getOutputUnit(m_outports_dirn2idx.at(direction));
+    int credits = 0;
+    for (int vc = 0; vc < m_router->get_num_vcs(); ++vc)
+        credits += output->get_credit_count(vc);
+    return credits;
+}
+
+bool
+RoutingUnit::isDirectionTrojanActive(PortDirection direction) const
+{
+    const int num_cols = m_router->get_net_ptr()->getNumCols();
+    int neighbor = m_router->get_id();
+    if (direction == "East")
+        neighbor++;
+    else if (direction == "West")
+        neighbor--;
+    else if (direction == "North")
+        neighbor += num_cols;
+    else if (direction == "South")
+        neighbor -= num_cols;
+    else
+        panic("Unsupported DYXY direction %s", direction.c_str());
+    return m_router->get_net_ptr()->isTrojanActive(neighbor);
 }
 
 } // namespace garnet
