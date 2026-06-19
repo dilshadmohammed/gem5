@@ -66,7 +66,16 @@ Garnet embeds the trained scaler, threshold, and autoencoder parameters from
 `bhr_autoencoder.pth` in a dependency-free C++ inference implementation. At
 each feature-sampling window, the router computes a reconstruction error and
 latches `trojan_active` when that error exceeds the model threshold. The CSV
-output includes `anomaly_score` and `trojan_active` for inspection.
+output includes `anomaly_score`, `trojan_active`, per-window infected packet
+counts, per-window detected infected packet counts, and cumulative infected and
+detected-infected packet totals for inspection. Router stats also expose
+`infected_packets`, `detected_infected_packets`, `missed_infected_packets`,
+`detection_events`, `false_positive_detection_events`, `detection_precision`,
+and `detection_recall` to support precision/recall reporting. The GarnetNetwork
+object also reports network-wide `total_infected_packets`,
+`total_detected_infected_packets`, `total_missed_infected_packets`,
+`total_detection_events`, `total_false_positive_detection_events`,
+`detection_precision`, and `detection_recall` totals.
 
 Routing algorithm `2` is DYXY routing for mesh topologies. When both minimal
 next-hop directions are available, it avoids a neighbor whose embedded model

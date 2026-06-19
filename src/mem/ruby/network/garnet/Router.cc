@@ -74,6 +74,11 @@ Router::Router(const Params &p)
     m_first_wakeup = true;
     m_trojan_active = false;
     m_anomaly_score = 0.0f;
+    m_total_infected_packets = 0;
+    m_total_detected_infected_packets = 0;
+    m_total_missed_infected_packets = 0;
+    m_total_detection_events = 0;
+    m_total_false_positive_detection_events = 0;
 }
 
 void
@@ -178,8 +183,11 @@ Router::wakeup()
 
         // Collect credit sends (key BHR indicator - fake credits!)
         uint64_t total_credit_sends = 0;
+        uint64_t window_infected_packets = 0;
         for (int inport = 0; inport < m_input_unit.size(); inport++) {
             total_credit_sends += m_input_unit[inport]->get_credit_sends();
+            window_infected_packets +=
+                m_input_unit[inport]->get_window_infected_packets();
         }
 
         BhrAutoencoder::Features features = {{
@@ -203,6 +211,19 @@ Router::wakeup()
         }};
         const bool anomaly = m_bhr_detector.isAnomaly(features,
                                                        &m_anomaly_score);
+        const uint64_t window_detected_infected_packets =
+            anomaly ? window_infected_packets : 0;
+        const uint64_t window_missed_infected_packets =
+            anomaly ? 0 : window_infected_packets;
+        m_total_infected_packets += window_infected_packets;
+        m_total_detected_infected_packets += window_detected_infected_packets;
+        m_total_missed_infected_packets += window_missed_infected_packets;
+        if (anomaly) {
+            m_total_detection_events++;
+            if (window_infected_packets == 0)
+                m_total_false_positive_detection_events++;
+        }
+
         if (anomaly && !m_trojan_active) {
             m_trojan_active = true;
             DPRINTF(RubyNetwork, "Router %d detected an active Trojan "
@@ -217,7 +238,12 @@ Router::wakeup()
             logFile << "tick,router_id,flit_in,flit_out,avg_wait,max_wait,"
                     << "buffer_occ,active_vcs,stalls,credits,crossbar,io_ratio,"
                     << "sw_in_arb,sw_out_arb,empty_vcs,total_wait,min_cred,max_cred,credit_sends,"
-                    << "anomaly_score,trojan_active\n";
+                    << "anomaly_score,trojan_active,"
+                    << "window_infected_packets,detected_infected_packets,"
+                    << "missed_infected_packets,total_infected_packets,"
+                    << "total_detected_infected_packets,"
+                    << "total_missed_infected_packets,total_detection_events,"
+                    << "total_false_positive_detection_events\n";
             s_csv_header_written = true;
             logFile.close();
             logFile.open("anomaly_features.csv", std::ios::app);
@@ -245,7 +271,15 @@ Router::wakeup()
                 << max_credits << ","
                 << total_credit_sends << ","
                 << std::fixed << std::setprecision(6) << m_anomaly_score << ","
-                << m_trojan_active << "\n";
+                << m_trojan_active << ","
+                << window_infected_packets << ","
+                << window_detected_infected_packets << ","
+                << window_missed_infected_packets << ","
+                << m_total_infected_packets << ","
+                << m_total_detected_infected_packets << ","
+                << m_total_missed_infected_packets << ","
+                << m_total_detection_events << ","
+                << m_total_false_positive_detection_events << "\n";
         logFile.close();
 
         // Reset window stats
@@ -254,6 +288,7 @@ Router::wakeup()
                 m_input_unit[inport]->reset_wait_stats(vc);
             }
             m_input_unit[inport]->reset_credit_sends();
+            m_input_unit[inport]->reset_window_infected_packets();
         }
         m_window_flit_in = 0;
         m_window_flit_out = 0;
@@ -403,6 +438,52 @@ Router::regStats()
         .desc("Number of packets dropped by Trojan (BHR activations)")
         .flags(statistics::nozero)
     ;
+
+    m_infected_packets
+        .name(name() + ".infected_packets")
+        .desc("Ground-truth packets infected by BHR Trojan activation")
+        .flags(statistics::nozero)
+    ;
+
+    m_detected_infected_packets
+        .name(name() + ".detected_infected_packets")
+        .desc("Ground-truth infected packets in windows detected by the model")
+        .flags(statistics::nozero)
+    ;
+
+    m_missed_infected_packets
+        .name(name() + ".missed_infected_packets")
+        .desc("Ground-truth infected packets in windows missed by the model")
+        .flags(statistics::nozero)
+    ;
+
+    m_detection_events
+        .name(name() + ".detection_events")
+        .desc("Number of sampling windows flagged anomalous by the model")
+        .flags(statistics::nozero)
+    ;
+
+    m_false_positive_detection_events
+        .name(name() + ".false_positive_detection_events")
+        .desc("Model-detected windows with no ground-truth infected packets")
+        .flags(statistics::nozero)
+    ;
+
+    m_detection_precision
+        .name(name() + ".detection_precision")
+        .desc("Precision proxy: detected infected packets divided by detected "
+              "infected packets plus false-positive windows")
+        .precision(6)
+    ;
+    m_detection_precision = m_detected_infected_packets /
+        (m_detected_infected_packets + m_false_positive_detection_events);
+
+    m_detection_recall
+        .name(name() + ".detection_recall")
+        .desc("Packet recall: detected infected packets divided by infected packets")
+        .precision(6)
+    ;
+    m_detection_recall = m_detected_infected_packets / m_infected_packets;
 }
 
 void
@@ -420,10 +501,16 @@ Router::collateStats()
         switchAllocator.get_output_arbiter_activity();
     m_crossbar_activity = crossbarSwitch.get_crossbar_activity();
 
-    // Collate dropped packets from all input units
+    uint64_t dropped_packets = 0;
     for (int i = 0; i < m_input_unit.size(); i++) {
-        m_dropped_packets += m_input_unit[i]->get_dropped_packets();
+        dropped_packets += m_input_unit[i]->get_dropped_packets();
     }
+    m_dropped_packets = dropped_packets;
+    m_infected_packets = m_total_infected_packets;
+    m_detected_infected_packets = m_total_detected_infected_packets;
+    m_missed_infected_packets = m_total_missed_infected_packets;
+    m_detection_events = m_total_detection_events;
+    m_false_positive_detection_events = m_total_false_positive_detection_events;
 }
 
 void
@@ -435,6 +522,11 @@ Router::resetStats()
 
     crossbarSwitch.resetStats();
     switchAllocator.resetStats();
+    m_total_infected_packets = 0;
+    m_total_detected_infected_packets = 0;
+    m_total_missed_infected_packets = 0;
+    m_total_detection_events = 0;
+    m_total_false_positive_detection_events = 0;
 }
 
 void

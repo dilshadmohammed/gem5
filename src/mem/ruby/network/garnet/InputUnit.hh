@@ -237,6 +237,7 @@ class InputUnit : public Consumer
     Tick m_next_cooldown = 0;               // Variable cooldown period
     uint64_t m_entropy_state = 0x5DEECE66D; // PRNG state for entropy
     uint64_t m_dropped_packets = 0;         // Count of dropped packets (Trojan activations)
+    uint64_t m_window_infected_packets = 0; // BHR activations in current sample window
 
     // Credit tracking for anomaly detection
     uint64_t m_credit_sends;  // Total credits sent to upstream
@@ -250,6 +251,10 @@ class InputUnit : public Consumer
     // Dropped packets tracking
     uint64_t get_dropped_packets() const { return m_dropped_packets; }
     void increment_dropped_packets() { m_dropped_packets++; }
+    uint64_t get_window_infected_packets() const
+    { return m_window_infected_packets; }
+    void reset_window_infected_packets()
+    { m_window_infected_packets = 0; }
 };
 
 } // namespace garnet

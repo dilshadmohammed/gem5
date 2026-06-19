@@ -169,6 +169,7 @@ InputUnit::wakeup()
                         blackhole_vc[vc] = true;
                         dropping_packet_id[vc] = t_flit->getPacketID();
                         m_dropped_packets++;  // Track dropped packets for stats
+                        m_window_infected_packets++;
                         std::cout << "Dropping packet: " << t_flit->getPacketID() 
                                   << " on VC: " << vc 
                                   << " (entropy: " << std::hex << entropy << std::dec << ")" << std::endl;
@@ -301,6 +302,9 @@ InputUnit::resetStats()
         m_num_buffer_reads[j] = 0;
         m_num_buffer_writes[j] = 0;
     }
+    m_dropped_packets = 0;
+    m_window_infected_packets = 0;
+    m_credit_sends = 0;
 }
 
 } // namespace garnet

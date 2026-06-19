@@ -205,6 +205,14 @@ class GarnetNetwork : public Network
     statistics::Scalar  m_total_hops;
     statistics::Formula m_avg_hops;
 
+    statistics::Scalar m_total_infected_packets;
+    statistics::Scalar m_total_detected_infected_packets;
+    statistics::Scalar m_total_missed_infected_packets;
+    statistics::Scalar m_total_detection_events;
+    statistics::Scalar m_total_false_positive_detection_events;
+    statistics::Formula m_detection_precision;
+    statistics::Formula m_detection_recall;
+
     std::vector<std::vector<statistics::Scalar *>> m_data_traffic_distribution;
     std::vector<std::vector<statistics::Scalar *>> m_ctrl_traffic_distribution;
 

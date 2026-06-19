@@ -92,6 +92,14 @@ class Router : public BasicRouter, public Consumer
     int get_id()            { return m_id; }
     bool isTrojanActive() const { return m_trojan_active; }
     float getAnomalyScore() const { return m_anomaly_score; }
+    uint64_t getTotalInfectedPackets() const { return m_total_infected_packets; }
+    uint64_t getTotalDetectedInfectedPackets() const
+    { return m_total_detected_infected_packets; }
+    uint64_t getTotalMissedInfectedPackets() const
+    { return m_total_missed_infected_packets; }
+    uint64_t getTotalDetectionEvents() const { return m_total_detection_events; }
+    uint64_t getTotalFalsePositiveDetectionEvents() const
+    { return m_total_false_positive_detection_events; }
 
     void init_net_ptr(GarnetNetwork* net_ptr)
     {
@@ -169,6 +177,13 @@ class Router : public BasicRouter, public Consumer
 
     // Trojan stats
     statistics::Scalar m_dropped_packets;
+    statistics::Scalar m_infected_packets;
+    statistics::Scalar m_detected_infected_packets;
+    statistics::Scalar m_missed_infected_packets;
+    statistics::Scalar m_detection_events;
+    statistics::Scalar m_false_positive_detection_events;
+    statistics::Formula m_detection_precision;
+    statistics::Formula m_detection_recall;
 
     // Anomaly detection feature tracking
     uint64_t m_window_flit_in;
@@ -181,6 +196,11 @@ class Router : public BasicRouter, public Consumer
     BhrAutoencoder m_bhr_detector;
     bool m_trojan_active;
     float m_anomaly_score;
+    uint64_t m_total_infected_packets;
+    uint64_t m_total_detected_infected_packets;
+    uint64_t m_total_missed_infected_packets;
+    uint64_t m_total_detection_events;
+    uint64_t m_total_false_positive_detection_events;
     static bool s_csv_header_written;
 };
 
